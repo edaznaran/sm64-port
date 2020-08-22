@@ -27,6 +27,41 @@
 #include "gfx_rendering_api.h"
 #include "gfx_whb.h"
 
+typedef struct _Mat {
+    int32_t frame_count;
+    int32_t window_height;
+
+    int32_t tex_flags;
+    int32_t fog_used;
+    int32_t alpha_used;
+    int32_t noise_used;
+    int32_t texture_edge;
+    int32_t color_alpha_same;
+
+    int32_t c_0_0;
+    int32_t c_0_1;
+    int32_t c_0_2;
+    int32_t c_0_3;
+    int32_t c_1_0;
+    int32_t c_1_1;
+    int32_t c_1_2;
+    int32_t c_1_3;
+
+    int32_t do_single_0;
+    int32_t do_single_1;
+    int32_t do_multiply_0;
+    int32_t do_multiply_1;
+    int32_t do_mix_0;
+    int32_t do_mix_1;
+} Mat;
+
+static_assert(sizeof(Mat) == 88, "Sizeof Mat must be 88!");
+
+typedef struct _MatEx {
+    Mat mat;
+    uint8_t pad[0x100 - sizeof(Mat)];
+} MatEx;
+
 struct ShaderProgram {
     uint32_t shader_id;
     WHBGfxShaderGroup group;
@@ -34,20 +69,19 @@ struct ShaderProgram {
     bool used_textures[2];
     uint8_t num_floats;
     bool used_noise;
-    //uint32_t frame_count_offset;
-    //uint32_t window_height_offset;
+    Mat *mat;
     uint32_t samplers_location[2];
 };
 
-typedef struct _Texture
-{
-     GX2Texture texture;
-     GX2Sampler sampler;
-     bool textureUploaded;
-     bool samplerSet;
+typedef struct _Texture {
+    GX2Texture texture;
+    GX2Sampler sampler;
+    bool textureUploaded;
+    bool samplerSet;
 } Texture;
 
 static struct ShaderProgram shader_program_pool[64];
+static MatEx shader_mat_pool[64] __attribute__ ((aligned(0x100)));
 static uint8_t shader_program_pool_size = 0;
 
 static struct ShaderProgram *current_shader_program = NULL;
@@ -58,42 +92,46 @@ static uint8_t current_tile = 0;
 static uint32_t current_texture_ids[2];
 
 static uint32_t frame_count = 0;
-static uint32_t current_height = 0;
 
 static BOOL current_depth_test = FALSE;
 static BOOL current_depth_write = FALSE;
 static GX2CompareFunction current_depth_compare = GX2_COMPARE_FUNC_LEQUAL;
 
-GX2SamplerVar *GX2GetPixelSamplerVar(const GX2PixelShader *shader, const char *name)
-{
-    for (uint32_t i = 0; i < shader->samplerVarCount; i++)
-    {
-       if (strcmp(shader->samplerVars[i].name, name) == 0)
+inline GX2SamplerVar *GX2GetPixelSamplerVar(const GX2PixelShader *shader, const char *name) {
+    for (uint32_t i = 0; i < shader->samplerVarCount; i++) {
+       if (strcmp(shader->samplerVars[i].name, name) == 0) {
            return &(shader->samplerVars[i]);
+       }
     }
 
     return NULL;
 }
 
-s32 GX2GetPixelSamplerVarLocation(const GX2PixelShader *shader, const char *name)
-{
+inline int32_t GX2GetPixelSamplerVarLocation(const GX2PixelShader *shader, const char *name) {
     GX2SamplerVar *sampler = GX2GetPixelSamplerVar(shader, name);
-    if (!sampler)
+    if (!sampler) {
         return -1;
+    }
 
     return sampler->location;
 }
 
-/*
-s32 GX2GetPixelUniformVarOffset(const GX2PixelShader *shader, const char *name)
-{
-    GX2UniformVar *uniform = GX2GetPixelUniformVar(shader, name);
-    if (!uniform)
+inline int32_t GX2GetPixelUniformBlockLocation(const GX2PixelShader *shader, const char *name) {
+    GX2UniformBlock *uniformBlock = GX2GetPixelUniformBlock(shader, name);
+    if (!uniformBlock) {
         return -1;
+    }
 
-    return uniform->offset;
+    return uniformBlock->offset;
 }
-*/
+
+inline uint32_t gfx_whb_swap32(uint32_t x)
+{
+    return x << 24 |
+          (x & 0xFF00) << 8 |
+           x >> 24 |
+           x >> 8 & 0xFF00;
+}
 
 static bool gfx_whb_z_is_from_0_to_1(void) {
     return false;
@@ -107,22 +145,24 @@ static void gfx_whb_unload_shader(struct ShaderProgram *old_prg) {
     }
 }
 
-static void gfx_whb_set_uniforms(struct ShaderProgram *prg) {
-    /*
+inline void gfx_whb_set_uniforms(struct ShaderProgram *prg) {
+    Mat *mat = prg->mat;
     if (prg->used_noise) {
-        uint32_t frame_count_array[4] = { frame_count, 0, 0, 0 };
-        uint32_t window_height_array[4] = { current_height, 0, 0, 0 };
-
-        GX2SetPixelUniformReg(prg->frame_count_offset, 4, frame_count_array);
-        GX2SetPixelUniformReg(prg->window_height_offset, 4, window_height_array);
+        mat->frame_count = gfx_whb_swap32(frame_count);
+        mat->window_height = gfx_whb_swap32(window_height);
     }
-    */
+
+    GX2Invalidate((GX2InvalidateMode)(GX2_INVALIDATE_MODE_CPU | GX2_INVALIDATE_MODE_UNIFORM_BLOCK), mat, sizeof(Mat));
+    GX2SetPixelUniformBlock(GX2GetPixelUniformBlockLocation(prg->group.pixelShader, "Mat"), sizeof(Mat), mat);
 }
 
 static void gfx_whb_load_shader(struct ShaderProgram *new_prg) {
     current_shader_program = new_prg;
-    if (new_prg == NULL)
+    if (new_prg == NULL) {
         return;
+    }
+
+    GX2SetShaderModeEx(GX2_SHADER_MODE_UNIFORM_BLOCK, 48, 64, 0, 0, 200, 192);
 
     GX2SetFetchShader(&new_prg->group.fetchShader);
     GX2SetVertexShader(new_prg->group.vertexShader);
@@ -135,102 +175,87 @@ static struct ShaderProgram *gfx_whb_create_and_load_new_shader(uint32_t shader_
     struct CCFeatures cc_features;
     gfx_cc_get_features(shader_id, &cc_features);
 
-    struct ShaderProgram *prg = &shader_program_pool[shader_program_pool_size++];
+    struct ShaderProgram *prg = &shader_program_pool[shader_program_pool_size];
+    Mat *mat = &shader_mat_pool[shader_program_pool_size].mat;
+    shader_program_pool_size++;
 
     const uint8_t *shader_wiiu;
-
-    switch (shader_id) {
-        case 0x01200200:
-            shader_wiiu = shader_wiiu_01200200;
-            break;
-        case 0x00000045:
-            shader_wiiu = shader_wiiu_00000045;
-            break;
-        case 0x00000200:
-            shader_wiiu = shader_wiiu_00000200;
-            break;
-        case 0x01200a00:
-            shader_wiiu = shader_wiiu_01200a00;
-            break;
-        case 0x00000a00:
-            shader_wiiu = shader_wiiu_00000a00;
-            break;
-        case 0x01a00045:
-            shader_wiiu = shader_wiiu_01a00045;
-            break;
-        case 0x00000551:
-            shader_wiiu = shader_wiiu_00000551;
-            break;
-        case 0x01045045:
-            shader_wiiu = shader_wiiu_01045045;
-            break;
-        case 0x05a00a00:
-            shader_wiiu = shader_wiiu_05a00a00;
-            break;
-        case 0x01200045:
-            shader_wiiu = shader_wiiu_01200045;
-            break;
-        case 0x05045045:
-            shader_wiiu = shader_wiiu_05045045;
-            break;
-        case 0x01045a00:
-            shader_wiiu = shader_wiiu_01045a00;
-            break;
-        case 0x01a00a00:
-            shader_wiiu = shader_wiiu_01a00a00;
-            break;
-        case 0x0000038d:
-            shader_wiiu = shader_wiiu_0000038d;
-            break;
-        case 0x01081081:
-            shader_wiiu = shader_wiiu_01081081;
-            break;
-        case 0x0120038d:
-            shader_wiiu = shader_wiiu_0120038d;
-            break;
-        case 0x03200045:
-            shader_wiiu = shader_wiiu_03200045;
-            break;
-        case 0x03200a00:
-            shader_wiiu = shader_wiiu_03200a00;
-            break;
-        case 0x01a00a6f:
-            shader_wiiu = shader_wiiu_01a00a6f;
-            break;
-        case 0x01141045:
-            shader_wiiu = shader_wiiu_01141045;
-            break;
-        case 0x07a00a00:
-            shader_wiiu = shader_wiiu_07a00a00;
-            break;
-        case 0x05200200:
-            shader_wiiu = shader_wiiu_05200200;
-            break;
-        case 0x03200200:
-            shader_wiiu = shader_wiiu_03200200;
-            break;
-        case 0x09200200:
-            shader_wiiu = shader_wiiu_09200200;
-            break;
-        case 0x0920038d:
-            shader_wiiu = shader_wiiu_0920038d;
-            break;
-        case 0x09200045:
-            shader_wiiu = shader_wiiu_09200045;
-            break;
-        case 0x09200a00:
-            shader_wiiu = shader_wiiu_09200a00;
-            break;
-        default:
-error:
-            WHBLogPrintf("Shader create failed! shader_id: 0x%x", shader_id);
-            shader_program_pool_size--;
-            current_shader_program = NULL;
-            return NULL;
+    if (cc_features.opt_alpha) {
+        if (cc_features.color_alpha_same) {
+            if (cc_features.opt_texture_edge) {
+                if (cc_features.opt_fog) {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_textureedge_fog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_textureedge_fog_nonoise;
+                    }
+                } else {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_textureedge_nofog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_textureedge_nofog_nonoise;
+                    }
+                }
+            } else {
+                if (cc_features.opt_fog) {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_notextureedge_fog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_notextureedge_fog_nonoise;
+                    }
+                } else {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_notextureedge_nofog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_coloralphasame_notextureedge_nofog_nonoise;
+                    }
+                }
+            }
+        } else {
+            if (cc_features.opt_texture_edge) {
+                if (cc_features.opt_fog) {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_textureedge_fog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_textureedge_fog_nonoise;
+                    }
+                } else {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_textureedge_nofog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_textureedge_nofog_nonoise;
+                    }
+                }
+            } else {
+                if (cc_features.opt_fog) {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_notextureedge_fog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_notextureedge_fog_nonoise;
+                    }
+                } else {
+                    if (cc_features.opt_noise) {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_notextureedge_nofog_noise;
+                    } else  {
+                        shader_wiiu = shader_wiiu_alpha_nocoloralphasame_notextureedge_nofog_nonoise;
+                    }
+                }
+            }
+        }
+    } else {
+        if (cc_features.opt_fog) {
+            shader_wiiu = shader_wiiu_noalpha_fog;
+        } else {
+            shader_wiiu = shader_wiiu_noalpha_nofog;
+        }
     }
 
     if (!WHBGfxLoadGFDShaderGroup(&prg->group, 0, shader_wiiu)) {
-        goto error;
+error:
+        WHBLogPrintf("Shader create failed! shader_id: 0x%x", shader_id);
+        shader_program_pool_size--;
+        current_shader_program = NULL;
+        return NULL;
     }
 
     WHBLogPrint("Loaded GFD.");
@@ -284,6 +309,28 @@ error:
     prg->num_inputs = cc_features.num_inputs;
     prg->used_textures[0] = cc_features.used_textures[0];
     prg->used_textures[1] = cc_features.used_textures[1];
+    prg->mat = mat;
+
+    mat->tex_flags = gfx_whb_swap32((uint32_t)((bool)cc_features.used_textures[0]) | ((uint32_t)((bool)cc_features.used_textures[1]) << 1));
+    mat->fog_used = gfx_whb_swap32(cc_features.opt_fog);
+    mat->alpha_used = gfx_whb_swap32(cc_features.opt_alpha);
+    mat->noise_used = gfx_whb_swap32(cc_features.opt_noise);
+    mat->texture_edge = gfx_whb_swap32(cc_features.opt_texture_edge);
+    mat->color_alpha_same = gfx_whb_swap32(cc_features.color_alpha_same);
+    mat->c_0_0 = gfx_whb_swap32(cc_features.c[0][0]);
+    mat->c_0_1 = gfx_whb_swap32(cc_features.c[0][1]);
+    mat->c_0_2 = gfx_whb_swap32(cc_features.c[0][2]);
+    mat->c_0_3 = gfx_whb_swap32(cc_features.c[0][3]);
+    mat->c_1_0 = gfx_whb_swap32(cc_features.c[1][0]);
+    mat->c_1_1 = gfx_whb_swap32(cc_features.c[1][1]);
+    mat->c_1_2 = gfx_whb_swap32(cc_features.c[1][2]);
+    mat->c_1_3 = gfx_whb_swap32(cc_features.c[1][3]);
+    mat->do_single_0 = gfx_whb_swap32(cc_features.do_single[0]);
+    mat->do_single_1 = gfx_whb_swap32(cc_features.do_single[1]);
+    mat->do_multiply_0 = gfx_whb_swap32(cc_features.do_multiply[0]);
+    mat->do_multiply_1 = gfx_whb_swap32(cc_features.do_multiply[1]);
+    mat->do_mix_0 = gfx_whb_swap32(cc_features.do_mix[0]);
+    mat->do_mix_1 = gfx_whb_swap32(cc_features.do_mix[1]);
 
     gfx_whb_load_shader(prg);
 
@@ -292,16 +339,7 @@ error:
     prg->samplers_location[0] = GX2GetPixelSamplerVarLocation(prg->group.pixelShader, "uTex0");
     prg->samplers_location[1] = GX2GetPixelSamplerVarLocation(prg->group.pixelShader, "uTex1");
 
-    /*
-    prg->frame_count_offset = GX2GetPixelUniformVarOffset(prg->group.pixelShader, "frame_count");
-    prg->window_height_offset = GX2GetPixelUniformVarOffset(prg->group.pixelShader, "window_height");
-    */
-
-    if (cc_features.opt_alpha && cc_features.opt_noise) {
-        prg->used_noise = true;
-    } else {
-        prg->used_noise = false;
-    }
+    prg->used_noise = cc_features.opt_alpha && cc_features.opt_noise;
 
     WHBLogPrint("Initiated Tex/Frame/Height uniforms.");
     WHBLogPrint("Initiated Shader.");
@@ -458,7 +496,6 @@ static void gfx_whb_set_zmode_decal(bool zmode_decal) {
 
 static void gfx_whb_set_viewport(int x, int y, int width, int height) {
     GX2SetViewport(x, window_height - y - height, width, height, 0.0f, 1.0f);
-    current_height = height;
 }
 
 static void gfx_whb_set_scissor(int x, int y, int width, int height) {
