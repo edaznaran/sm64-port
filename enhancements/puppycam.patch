@@ -257,9 +257,9 @@ index 0000000..eedb206
 +static struct newcam_optionstruct newcam_optionvar[]=
 +{ //If the min and max are 0 and 1, then the value text is used, otherwise it's ignored.
 +    //No point this existing on hardware you natively get double analogue sticks.
-+    //#ifdef TARGET_N64
++    #ifdef TARGET_N64
 +    {/*Option Name*/ 0, /*Option Variable*/ &newcam_analogue, /*Option Value Text Start*/ 0, /*Option Minimum*/ FALSE, /*Option Maximum*/ TRUE},
-+    //#endif
++    #endif
 +    {/*Option Name*/ 1, /*Option Variable*/ &newcam_sensitivityX, /*Option Value Text Start*/ 255, /*Option Minimum*/ 10, /*Option Maximum*/ 500},
 +    {/*Option Name*/ 2, /*Option Variable*/ &newcam_sensitivityY, /*Option Value Text Start*/ 255, /*Option Minimum*/ 10, /*Option Maximum*/ 500},
 +    {/*Option Name*/ 3, /*Option Variable*/ &newcam_invertX, /*Option Value Text Start*/ 0, /*Option Minimum*/ FALSE, /*Option Maximum*/ TRUE},
