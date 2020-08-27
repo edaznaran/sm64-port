@@ -2211,7 +2211,7 @@ index 280ae27..a95e3ca 100644
  void configfile_save(const char *filename);
  
 diff --git a/src/pc/controller/controller_wiiu.c b/src/pc/controller/controller_wiiu.c
-index 5334cfa..b83eb63 100644
+index 5334cfa..acf6101 100644
 --- a/src/pc/controller/controller_wiiu.c
 +++ b/src/pc/controller/controller_wiiu.c
 @@ -14,6 +14,8 @@
@@ -2274,7 +2274,7 @@ index 5334cfa..b83eb63 100644
          for (size_t i = 0; i < num_buttons; i++) {
              if (ext & map[i].proButton) {
                  pad->button |= map[i].n64Button;
-@@ -176,6 +186,14 @@ static void read_wpad(OSContPad* pad) {
+@@ -176,11 +186,21 @@ static void read_wpad(OSContPad* pad) {
              pad->stick_y = (s8) round(stick.y * 80);
          }
      }
@@ -2289,6 +2289,13 @@ index 5334cfa..b83eb63 100644
  }
  
  static void controller_wiiu_read(OSContPad* pad) {
+     pad->stick_x = 0;
+     pad->stick_y = 0;
++    rightstick[0] = 0;
++    rightstick[1] = 0;
+ 
+     read_vpad(pad);
+     read_wpad(pad);
 diff --git a/src/pc/controller/controller_wiiu.h b/src/pc/controller/controller_wiiu.h
 index 64cd041..e711851 100644
 --- a/src/pc/controller/controller_wiiu.h
