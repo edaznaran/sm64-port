@@ -257,9 +257,9 @@ index 0000000..eedb206
 +static struct newcam_optionstruct newcam_optionvar[]=
 +{ //If the min and max are 0 and 1, then the value text is used, otherwise it's ignored.
 +    //No point this existing on hardware you natively get double analogue sticks.
-+    #ifdef TARGET_N64
++    //#ifdef TARGET_N64
 +    {/*Option Name*/ 0, /*Option Variable*/ &newcam_analogue, /*Option Value Text Start*/ 0, /*Option Minimum*/ FALSE, /*Option Maximum*/ TRUE},
-+    #endif
++    //#endif
 +    {/*Option Name*/ 1, /*Option Variable*/ &newcam_sensitivityX, /*Option Value Text Start*/ 255, /*Option Minimum*/ 10, /*Option Maximum*/ 500},
 +    {/*Option Name*/ 2, /*Option Variable*/ &newcam_sensitivityY, /*Option Value Text Start*/ 255, /*Option Minimum*/ 10, /*Option Maximum*/ 500},
 +    {/*Option Name*/ 3, /*Option Variable*/ &newcam_invertX, /*Option Value Text Start*/ 0, /*Option Minimum*/ FALSE, /*Option Maximum*/ TRUE},
@@ -2211,7 +2211,7 @@ index 280ae27..a95e3ca 100644
  void configfile_save(const char *filename);
  
 diff --git a/src/pc/controller/controller_wiiu.c b/src/pc/controller/controller_wiiu.c
-index 5334cfa..acf6101 100644
+index 5334cfa..ea4ee9f 100644
 --- a/src/pc/controller/controller_wiiu.c
 +++ b/src/pc/controller/controller_wiiu.c
 @@ -14,6 +14,8 @@
@@ -2243,14 +2243,10 @@ index 5334cfa..acf6101 100644
  
      if (status.extensionType == WPAD_EXT_NUNCHUK || status.extensionType == WPAD_EXT_MPLUS_NUNCHUK) {
          uint32_t ext = status.nunchuck.hold;
-@@ -135,15 +141,18 @@ static void read_wpad(OSContPad* pad) {
-         if (wm & WPAD_BUTTON_A) pad->button |= A_BUTTON;
-         if (wm & WPAD_BUTTON_B) pad->button |= B_BUTTON;
-         if (wm & WPAD_BUTTON_PLUS) pad->button |= START_BUTTON;
--        if (wm & WPAD_BUTTON_UP) pad->button |= U_CBUTTONS;
--        if (wm & WPAD_BUTTON_DOWN) pad->button |= D_CBUTTONS;
--        if (wm & WPAD_BUTTON_LEFT) pad->button |= L_CBUTTONS;
--        if (wm & WPAD_BUTTON_RIGHT) pad->button |= R_CBUTTONS;
+@@ -139,11 +145,18 @@ static void read_wpad(OSContPad* pad) {
+         if (wm & WPAD_BUTTON_DOWN) pad->button |= D_CBUTTONS;
+         if (wm & WPAD_BUTTON_LEFT) pad->button |= L_CBUTTONS;
+         if (wm & WPAD_BUTTON_RIGHT) pad->button |= R_CBUTTONS;
 +        if (gamepadRightStickNotSet) {
 +            if (wm & WPAD_BUTTON_UP) rightstick[1] = 80;
 +            if (wm & WPAD_BUTTON_DOWN) rightstick[1] = -80;
@@ -2266,7 +2262,7 @@ index 5334cfa..acf6101 100644
          for (size_t i = 0; i < num_buttons; i++) {
              if (ext & map[i].classicButton) {
                  pad->button |= map[i].n64Button;
-@@ -156,6 +165,7 @@ static void read_wpad(OSContPad* pad) {
+@@ -156,6 +169,7 @@ static void read_wpad(OSContPad* pad) {
      } else if (status.extensionType == WPAD_EXT_PRO_CONTROLLER) {
          uint32_t ext = status.pro.hold;
          stick = status.pro.leftStick;
@@ -2274,7 +2270,7 @@ index 5334cfa..acf6101 100644
          for (size_t i = 0; i < num_buttons; i++) {
              if (ext & map[i].proButton) {
                  pad->button |= map[i].n64Button;
-@@ -176,11 +186,21 @@ static void read_wpad(OSContPad* pad) {
+@@ -176,11 +190,21 @@ static void read_wpad(OSContPad* pad) {
              pad->stick_y = (s8) round(stick.y * 80);
          }
      }
