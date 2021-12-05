@@ -6,6 +6,7 @@
 
 #include <ultra64.h>
 #include "macros.h"
+#include "config.h"
 
 
 // Certain functions are marked as having return values, but do not
@@ -30,8 +31,8 @@ struct Controller
   /*0x12*/ u16 buttonPressed;
   /*0x14*/ OSContStatus *statusData;
   /*0x18*/ OSContPad *controllerData;
-#ifdef VERSION_SH
-  /*0x1C*/ int port;
+#if ENABLE_RUMBLE
+  /*0x1C*/ s32 port;
 #endif
 };
 
@@ -52,6 +53,7 @@ typedef s16 Collision;
 typedef s16 Trajectory;
 typedef s16 PaintingData;
 typedef uintptr_t BehaviorScript;
+typedef u8 Texture;
 
 enum SpTaskState {
     SPTASK_STATE_NOT_STARTED,
@@ -117,6 +119,10 @@ struct AnimInfo
     /*0x0A 0x42*/ u16 animTimer;
     /*0x0C 0x44*/ s32 animFrameAccelAssist;
     /*0x10 0x48*/ s32 animAccel;
+    s16 prevAnimFrame;
+    s16 prevAnimID;
+    u32 prevAnimFrameTimestamp;
+    struct Animation *prevAnimPtr;
 };
 
 struct GraphNodeObject
@@ -127,11 +133,22 @@ struct GraphNodeObject
     /*0x19*/ s8 activeAreaIndex;
     /*0x1A*/ Vec3s angle;
     /*0x20*/ Vec3f pos;
+    Vec3s prevAngle;
+    Vec3f prevPos;
+    u32 prevTimestamp;
+    Vec3f prevShadowPos;
+    u32 prevShadowPosTimestamp;
     /*0x2C*/ Vec3f scale;
+    Vec3f prevScale;
+    u32 prevScaleTimestamp;
     /*0x38*/ struct AnimInfo animInfo;
     /*0x4C*/ struct SpawnInfo *unk4C;
     /*0x50*/ Mat4 *throwMatrix; // matrix ptr
+    Mat4 prevThrowMatrix;
+    u32 prevThrowMatrixTimestamp;
+    Mat4 *throwMatrixInterpolated;
     /*0x54*/ Vec3f cameraToObject;
+    u32 skipInterpolationTimestamp;
 };
 
 struct ObjectNode
@@ -242,6 +259,10 @@ struct Surface
     } normal;
     /*0x28*/ f32 originOffset;
     /*0x2C*/ struct Object *object;
+    Vec3s prevVertex1;
+    Vec3s prevVertex2;
+    Vec3s prevVertex3;
+    u32 modifiedTimestamp;
 };
 
 struct MarioBodyState
@@ -257,27 +278,6 @@ struct MarioBodyState
     /*0x0C*/ Vec3s torsoAngle;
     /*0x12*/ Vec3s headAngle;
     /*0x18*/ Vec3f heldObjLastPosition; /// also known as HOLP
-    u8 padding[4];
-};
-
-struct OffsetSizePair
-{
-    u32 offset;
-    u32 size;
-};
-
-struct MarioAnimDmaRelatedThing
-{
-    u32 count;
-    u8 *srcAddr;
-    struct OffsetSizePair anim[1]; // dynamic size
-};
-
-struct MarioAnimation
-{
-    struct MarioAnimDmaRelatedThing *animDmaTable;
-    u8 *currentAnimAddr;
-    struct Animation *targetAnim;
     u8 padding[4];
 };
 
@@ -326,7 +326,7 @@ struct MarioState
     /*0x94*/ struct PlayerCameraState *statusForCamera;
     /*0x98*/ struct MarioBodyState *marioBodyState;
     /*0x9C*/ struct Controller *controller;
-    /*0xA0*/ struct MarioAnimation *animation;
+    /*0xA0*/ struct DmaHandlerList *animList;
     /*0xA4*/ u32 collidedObjInteractTypes;
     /*0xA8*/ s16 numCoins;
     /*0xAA*/ s16 numStars;
