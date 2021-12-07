@@ -55,6 +55,9 @@ static void gfx_whb_window_init(UNUSED const char *game_name, UNUSED bool start_
     WHBInitCrashHandler();
 
     WHBGfxInit();
+
+    // Remove this line when using the 60FPS patch
+    GX2SetSwapInterval(2);
 }
 
 static void gfx_whb_window_set_keyboard_callbacks(UNUSED bool (*on_key_down)(int scancode), UNUSED bool (*on_key_up)(int scancode), UNUSED void (*on_all_keys_up)(void)) {
