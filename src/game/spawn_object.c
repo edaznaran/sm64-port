@@ -1,6 +1,10 @@
 #ifdef USE_SYSTEM_MALLOC
 #include <stdlib.h>
 #include <malloc.h>
+
+#ifndef TARGET_WII_U
+#define memalign(a, n) malloc(n)
+#endif
 #endif
 #include <PR/ultratypes.h>
 
