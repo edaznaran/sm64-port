@@ -341,10 +341,6 @@ else
 endif
 BIN_DIRS := bin bin/$(VERSION)
 
-ifeq ($(TARGET_WII_U),1)
-  SRC_DIRS := $(SRC_DIRS) src/pc/gfx/shaders_wiiu
-endif
-
 ULTRA_SRC_DIRS := lib/src lib/src/math lib/asm lib/data
 ULTRA_BIN_DIRS := lib/bin
 
@@ -545,7 +541,10 @@ ifeq ($(TARGET_WEB),1)
   PLATFORM_LDFLAGS := -lm -no-pie -s TOTAL_MEMORY=20MB -g4 --source-map-base http://localhost:8080/ -s "EXTRA_EXPORTED_RUNTIME_METHODS=['callMain']"
 endif
 
-PLATFORM_CFLAGS += -DNO_SEGMENTED_MEMORY -DUSE_SYSTEM_MALLOC
+PLATFORM_CFLAGS += -DNO_SEGMENTED_MEMORY
+ifeq ($(NODRAWINGDISTANCE),0)
+  PLATFORM_CFLAGS += -DUSE_SYSTEM_MALLOC
+endif
 
 # Compiler and linker flags for graphics backend
 ifeq ($(ENABLE_OPENGL),1)
@@ -584,6 +583,12 @@ CFLAGS := $(OPT_FLAGS) -D_LANGUAGE_C $(DEF_INC_CFLAGS) $(PLATFORM_CFLAGS) $(GFX_
 
 ifeq ($(TARGET_WII_U),0)
   CFLAGS += -march=native
+endif
+
+# Check for no drawing distance option
+ifeq ($(NODRAWINGDISTANCE),1)
+  CC_CHECK += -DNODRAWINGDISTANCE
+  CFLAGS += -DNODRAWINGDISTANCE
 endif
 
 ASFLAGS := -I include -I $(BUILD_DIR) $(foreach d,$(DEFINES),--defsym $(d))
