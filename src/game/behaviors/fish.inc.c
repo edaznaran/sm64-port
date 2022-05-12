@@ -39,7 +39,9 @@ static void fish_spawner_act_spawn(void) {
     // Spawn and animate the schoolQuantity of fish if Mario enters render distance
     // or the stage is Secret Aquarium.
     // Fish moves randomly within a range of 700.0f.
+#ifndef NODRAWINGDISTANCE
     if (o->oDistanceToMario < minDistToMario || gCurrLevelNum == LEVEL_SA) {
+#endif
         for (i = 0; i < schoolQuantity; i++) {
             fishObject = spawn_object(o, model, bhvFish);
             fishObject->oBehParams2ndByte = o->oBehParams2ndByte;
@@ -47,7 +49,9 @@ static void fish_spawner_act_spawn(void) {
             obj_translate_xyz_random(fishObject, 700.0f);
         }
         o->oAction = FISH_SPAWNER_ACT_IDLE;
+#ifndef NODRAWINGDISTANCE
     }
+#endif
 }
 
 /**
@@ -55,9 +59,11 @@ static void fish_spawner_act_spawn(void) {
  * Mario is more than 2000 units higher.
  */
 static void fish_spawner_act_idle(void) {
+#ifndef NODRAWINGDISTANCE
     if ((gCurrLevelNum != LEVEL_SA) && (gMarioObject->oPosY - o->oPosY > 2000.0f)) {
         o->oAction = FISH_SPAWNER_ACT_RESPAWN;
     }
+#endif
 }
 
 /**
@@ -81,7 +87,7 @@ void bhv_fish_spawner_loop(void) {
 static void fish_vertical_roam(s32 speed) {
     f32 parentY = o->parentObj->oPosY;
 
-    // If the stage is Secret Aquarium, the fish can 
+    // If the stage is Secret Aquarium, the fish can
     // travel as far vertically as they wish.
     if (gCurrLevelNum == LEVEL_SA) {
         if (500.0f < absf(o->oPosY - o->oFishGoalY)) {
@@ -122,7 +128,7 @@ static void fish_act_roam(void) {
     }
 
     o->oFishGoalY = gMarioObject->oPosY + o->oFishHeightOffset;
-    
+
     // Rotate the fish towards Mario.
     cur_obj_rotate_yaw_toward(o->oAngleToMario, 0x400);
 
@@ -198,7 +204,7 @@ static void fish_act_flee(void) {
         } else {
             fish_vertical_roam(4);
         }
-        
+
     // Don't let the fish leave the water vertically.
     } else {
         o->oPosY = o->oFishWaterLevel - 50.0f;
