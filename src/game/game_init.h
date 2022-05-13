@@ -11,8 +11,10 @@
 
 #ifdef USE_SYSTEM_MALLOC
 #define GFX_POOL_SIZE 1
-#else
+#elif defined(TARGET_N64)
 #define GFX_POOL_SIZE 6400 // Size of how large the master display list (gDisplayListHead) can be
+#else
+#define GFX_POOL_SIZE 64000
 #endif
 
 struct GfxPool {
