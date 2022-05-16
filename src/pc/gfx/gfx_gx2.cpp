@@ -21,7 +21,9 @@
 #include <gx2/texture.h>
 
 #include <whb/log.h>
+#include <whb/gfx.h>
 
+#include "shaders_wiiu/shaders_wiiu.h"
 #include "gx2_shader_gen.h"
 #include "gfx_gx2.h"
 
@@ -31,11 +33,16 @@
 struct ShaderProgram
 {
     uint32_t shader_id;
-    struct ShaderGroup group;
+    union
+    {
+        WHBGfxShaderGroup whb_group;
+        struct ShaderGroup gen_group;
+    };
     uint8_t num_inputs;
     bool used_textures[2];
     uint8_t num_floats;
     bool used_noise;
+    bool is_precompiled;
     uint32_t window_params_offset;
     uint32_t samplers_location[2];
 };
@@ -126,9 +133,18 @@ static void gfx_gx2_load_shader(struct ShaderProgram* new_prg)
     if (!new_prg)
         return;
 
-    GX2SetFetchShader(&new_prg->group.fetchShader);
-    GX2SetVertexShader(&new_prg->group.vertexShader);
-    GX2SetPixelShader(&new_prg->group.pixelShader);
+    if (new_prg->is_precompiled)
+    {
+        GX2SetFetchShader(&new_prg->whb_group.fetchShader);
+        GX2SetVertexShader(new_prg->whb_group.vertexShader);
+        GX2SetPixelShader(new_prg->whb_group.pixelShader);
+    }
+    else
+    {
+        GX2SetFetchShader(&new_prg->gen_group.fetchShader);
+        GX2SetVertexShader(&new_prg->gen_group.vertexShader);
+        GX2SetPixelShader(&new_prg->gen_group.pixelShader);
+    }
 
     gfx_gx2_set_uniforms(new_prg);
 }
@@ -139,17 +155,113 @@ static struct ShaderProgram* gfx_gx2_create_and_load_new_shader(uint32_t shader_
     gfx_cc_get_features(shader_id, &cc_features);
 
     struct ShaderProgram* prg = &shader_program_pool[shader_program_pool_size++];
+    prg->is_precompiled = true;
 
-    if (gx2GenerateShaderGroup(&prg->group, &cc_features) != 0)
+    const uint8_t *shader_wiiu;
+    switch (shader_id)
     {
-        WHBLogPrintf("Failed to generate shader");
-        return (current_shader_program = nullptr);
+    case 0x01200200: shader_wiiu = shader_wiiu_01200200; break;
+    case 0x00000045: shader_wiiu = shader_wiiu_00000045; break;
+    case 0x00000200: shader_wiiu = shader_wiiu_00000200; break;
+    case 0x01200a00: shader_wiiu = shader_wiiu_01200a00; break;
+    case 0x00000a00: shader_wiiu = shader_wiiu_00000a00; break;
+    case 0x01a00045: shader_wiiu = shader_wiiu_01a00045; break;
+    case 0x00000551: shader_wiiu = shader_wiiu_00000551; break;
+    case 0x01045045: shader_wiiu = shader_wiiu_01045045; break;
+    case 0x05a00a00: shader_wiiu = shader_wiiu_05a00a00; break;
+    case 0x01200045: shader_wiiu = shader_wiiu_01200045; break;
+    case 0x05045045: shader_wiiu = shader_wiiu_05045045; break;
+    case 0x01045a00: shader_wiiu = shader_wiiu_01045a00; break;
+    case 0x01a00a00: shader_wiiu = shader_wiiu_01a00a00; break;
+    case 0x0000038d: shader_wiiu = shader_wiiu_0000038d; break;
+    case 0x01081081: shader_wiiu = shader_wiiu_01081081; break;
+    case 0x0120038d: shader_wiiu = shader_wiiu_0120038d; break;
+    case 0x03200045: shader_wiiu = shader_wiiu_03200045; break;
+    case 0x03200a00: shader_wiiu = shader_wiiu_03200a00; break;
+    case 0x01a00a6f: shader_wiiu = shader_wiiu_01a00a6f; break;
+    case 0x01141045: shader_wiiu = shader_wiiu_01141045; break;
+    case 0x07a00a00: shader_wiiu = shader_wiiu_07a00a00; break;
+    case 0x05200200: shader_wiiu = shader_wiiu_05200200; break;
+    case 0x03200200: shader_wiiu = shader_wiiu_03200200; break;
+    case 0x09200200: shader_wiiu = shader_wiiu_09200200; break;
+    case 0x0920038d: shader_wiiu = shader_wiiu_0920038d; break;
+    case 0x09200045: shader_wiiu = shader_wiiu_09200045; break;
+    case 0x09200a00: shader_wiiu = shader_wiiu_09200a00; break;
+    default:
+        if (gx2GenerateShaderGroup(&prg->gen_group, &cc_features) != 0)
+        {
+            WHBLogPrintf("Failed to generate shader. shader_id: 0x%08x", shader_id);
+error_gen:
+            shader_program_pool_size--;
+            return (current_shader_program = nullptr);
+        }
+        prg->is_precompiled = false;
+        WHBLogPrint("Generated shader.");
     }
 
-    WHBLogPrint("Generated shader");
+    if (prg->is_precompiled)
+    {
+        if (!WHBGfxLoadGFDShaderGroup(&prg->whb_group, 0, shader_wiiu))
+        {
+            WHBLogPrintf("Failed to load gsh. shader_id: 0x%08x", shader_id);
+            goto error_gen;
+        }
 
-    // In our case, each attribute has 4 floats
-    prg->num_floats = prg->group.numAttributes * 4;
+        WHBLogPrint("Loaded GFD.");
+
+        uint32_t pos = 0;
+        prg->num_floats = 0;
+
+        if (!WHBGfxInitShaderAttribute(&prg->whb_group, "aVtxPos", 0, pos, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32))
+        {
+error_attr:
+            WHBLogPrintf("Failed to initialize attribute. shader_id: 0x%08x", shader_id);
+            goto error_gen;
+        }
+
+        pos += 4 * sizeof(float);
+        prg->num_floats += 4;
+
+        if (cc_features.used_textures[0] || cc_features.used_textures[1])
+        {
+            if (!WHBGfxInitShaderAttribute(&prg->whb_group, "aTexCoord", 0, pos, GX2_ATTRIB_FORMAT_FLOAT_32_32))
+                goto error_attr;
+
+            pos += (2+2) * sizeof(float);
+            prg->num_floats += (2+2);// 2 floats for the texcoord + 2 floats (8 bytes) as padding, for faster GPU reading
+        }
+
+        if (cc_features.opt_fog)
+        {
+            if (!WHBGfxInitShaderAttribute(&prg->whb_group, "aFog", 0, pos, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32))
+                goto error_attr;
+
+            pos += 4 * sizeof(float);
+            prg->num_floats += 4;
+        }
+
+        for (int i = 0; i < cc_features.num_inputs; i++)
+        {
+            char name[16];
+            sprintf(name, "aInput%d", i + 1);
+            if (!WHBGfxInitShaderAttribute(&prg->whb_group, name, 0, pos, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32))
+                goto error_attr;
+
+            pos += 4 * sizeof(float);
+            prg->num_floats += 4;
+        }
+
+        if (!WHBGfxInitFetchShader(&prg->whb_group))
+        {
+            WHBLogPrintf("Failed to initialize fetch shader. shader_id: 0x%08x", shader_id);
+            goto error_gen;
+        }
+    }
+    else
+    {
+        // In our case, each attribute has 4 floats
+        prg->num_floats = prg->gen_group.numAttributes * 4;
+    }
 
     prg->shader_id = shader_id;
     prg->num_inputs = cc_features.num_inputs;
@@ -158,11 +270,13 @@ static struct ShaderProgram* gfx_gx2_create_and_load_new_shader(uint32_t shader_
 
     gfx_gx2_load_shader(prg);
 
-    WHBLogPrintf("Loaded shader");
+    WHBLogPrint("Loaded shader.");
 
-    prg->window_params_offset = GX2GetPixelUniformVarOffset(&prg->group.pixelShader, "window_params");
-    prg->samplers_location[0] = GX2GetPixelSamplerVarLocation(&prg->group.pixelShader, "uTex0");
-    prg->samplers_location[1] = GX2GetPixelSamplerVarLocation(&prg->group.pixelShader, "uTex1");
+    GX2PixelShader* pixel_shader = (prg->is_precompiled) ? prg->whb_group.pixelShader : &prg->gen_group.pixelShader;
+
+    prg->window_params_offset = GX2GetPixelUniformVarOffset(pixel_shader, "window_params");
+    prg->samplers_location[0] = GX2GetPixelSamplerVarLocation(pixel_shader, "uTex0");
+    prg->samplers_location[1] = GX2GetPixelSamplerVarLocation(pixel_shader, "uTex1");
 
     prg->used_noise = cc_features.opt_alpha && cc_features.opt_noise;
 
@@ -435,7 +549,13 @@ extern "C" void gfx_gx2_free(void)
     }
 
     for (uint32_t i = 0; i < shader_program_pool_size; i++)
-        gx2FreeShaderGroup(&shader_program_pool[i].group);
+    {
+        if (shader_program_pool[i].is_precompiled)
+            WHBGfxFreeShaderGroup(&shader_program_pool[i].whb_group);
+
+        else
+            gx2FreeShaderGroup(&shader_program_pool[i].gen_group);
+    }
 
     gx2_textures.clear();
     shader_program_pool_size = 0;
