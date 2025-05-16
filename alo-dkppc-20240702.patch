@@ -1,0 +1,144 @@
+diff --git a/include/PR/os_time.h b/include/PR/os_time.h
+index 4b5fc7e..a7ec50e 100644
+--- a/include/PR/os_time.h
++++ b/include/PR/os_time.h
+@@ -49,7 +49,7 @@ extern "C" {
+ /*
+  * Structure for time value
+  */
+-typedef u64	OSTime;
++typedef u64	OSTime64;
+ 
+ /*
+  * Structure for interval timer
+@@ -57,8 +57,8 @@ typedef u64	OSTime;
+ typedef struct OSTimer_s {
+ 	struct OSTimer_s	*next;	/* point to next timer in list */
+ 	struct OSTimer_s	*prev;	/* point to previous timer in list */
+-	OSTime			interval;	/* duration set by user */
+-	OSTime			value;		/* time remaining before */
++	OSTime64			interval;	/* duration set by user */
++	OSTime64			value;		/* time remaining before */
+ 						/* timer fires           */
+ 	OSMesgQueue		*mq;		/* Message Queue */
+ 	OSMesg			msg;		/* Message to send */
+@@ -98,9 +98,9 @@ typedef struct OSTimer_s {
+ 
+ /* Timer interface */
+ 
+-extern OSTime		osGetTime(void);
+-extern void		osSetTime(OSTime);
+-extern u32		osSetTimer(OSTimer *, OSTime, OSTime, OSMesgQueue *, OSMesg);
++extern OSTime64		osGetTime(void);
++extern void		osSetTime(OSTime64);
++extern u32		osSetTimer(OSTimer *, OSTime64, OSTime64, OSMesgQueue *, OSMesg);
+ extern int		osStopTimer(OSTimer *);
+ 
+ 
+diff --git a/src/game/profiler.c b/src/game/profiler.c
+index 9f968c6..4772b9b 100644
+--- a/src/game/profiler.c
++++ b/src/game/profiler.c
+@@ -59,7 +59,7 @@ void profiler_log_vblank_time(void) {
+ }
+ 
+ // draw the specified profiler given the information passed.
+-void draw_profiler_bar(OSTime clockBase, OSTime clockStart, OSTime clockEnd, s16 posY, u16 color) {
++void draw_profiler_bar(OSTime64 clockBase, OSTime64 clockStart, OSTime64 clockEnd, s16 posY, u16 color) {
+     s64 durationStart, durationEnd;
+     s32 rectX1, rectX2;
+ 
+@@ -139,7 +139,7 @@ void draw_reference_profiler_bars(void) {
+ void draw_profiler_mode_1(void) {
+     s32 i;
+     struct ProfilerFrameData *profiler;
+-    OSTime clockBase;
++    OSTime64 clockBase;
+ 
+     // the profiler logs 2 frames of data: last frame and current frame. Indexes are used
+     // to keep track of the current frame, so the index is xor'd to retrieve the last frame's
+diff --git a/src/game/profiler.h b/src/game/profiler.h
+index 0bb66a5..467487d 100644
+--- a/src/game/profiler.h
++++ b/src/game/profiler.h
+@@ -17,14 +17,14 @@ struct ProfilerFrameData {
+     // 2: render
+     // 3: display lists
+     // 4: thread 4 end (0 terminated)
+-    /* 0x08 */ OSTime gameTimes[5];
++    /* 0x08 */ OSTime64 gameTimes[5];
+     // gfxTimes:
+     // 0: processors queued
+     // 1: rsp completed
+     // 2: rdp completed
+-    /* 0x30 */ OSTime gfxTimes[3];
+-    /* 0x48 */ OSTime soundTimes[8];
+-    /* 0x88 */ OSTime vblankTimes[8];
++    /* 0x30 */ OSTime64 gfxTimes[3];
++    /* 0x48 */ OSTime64 soundTimes[8];
++    /* 0x88 */ OSTime64 vblankTimes[8];
+ };
+ 
+ // thread event IDs
+diff --git a/src/pc/controller/controller_wiiu.c b/src/pc/controller/controller_wiiu.c
+index cc5bd2c..be41098 100644
+--- a/src/pc/controller/controller_wiiu.c
++++ b/src/pc/controller/controller_wiiu.c
+@@ -135,8 +135,8 @@ static void read_wpad(OSContPad* pad) {
+     bool gamepadRightStickNotSet = pad->ext_stick_x == 0 && pad->ext_stick_y == 0;
+ 
+     if (status.extensionType == WPAD_EXT_NUNCHUK || status.extensionType == WPAD_EXT_MPLUS_NUNCHUK) {
+-        uint32_t ext = status.nunchuck.hold;
+-        stick = status.nunchuck.stick;
++        uint32_t ext = status.nunchuk.hold;
++        stick = status.nunchuk.stick;
+         rStick = (KPADVec2D) {0.0, 0.0};
+ 
+         if (wm & WPAD_BUTTON_A) pad->button |= A_BUTTON;
+diff --git a/src/pc/gfx/gfx_gx2_window.cpp b/src/pc/gfx/gfx_gx2_window.cpp
+index 9d75563..75f9524 100644
+--- a/src/pc/gfx/gfx_gx2_window.cpp
++++ b/src/pc/gfx/gfx_gx2_window.cpp
+@@ -105,13 +105,6 @@ static void gfx_gx2_window_exit_callback(void)
+     _Exit(-1);
+ }
+ 
+-typedef enum _GX2AspectRatio
+-{
+-    GX2_ASPECT_RATIO_4_TO_3,
+-    GX2_ASPECT_RATIO_16_TO_9
+-}
+-GX2AspectRatio;
+-
+ extern "C" GX2AspectRatio GX2GetSystemTVAspectRatio(void);
+ 
+ static bool gfx_gx2_window_foreground_acquire_callback(void)
+@@ -140,13 +133,13 @@ static bool gfx_gx2_window_foreground_acquire_callback(void)
+         case GX2_TV_SCAN_MODE_576I:
+         case GX2_TV_SCAN_MODE_480I:
+         case GX2_TV_SCAN_MODE_480P:
+-            if (tv_aspect_ratio == GX2_ASPECT_RATIO_4_TO_3)
++            if (tv_aspect_ratio == GX2_ASPECT_RATIO_4_3)
+             {
+                 g_window_width = 640;
+                 g_window_height = 480;
+                 tv_render_mode = GX2_TV_RENDER_MODE_STANDARD_480P;
+             }
+-            else // if (tv_aspect_ratio == GX2_ASPECT_RATIO_16_TO_9)
++            else // if (tv_aspect_ratio == GX2_ASPECT_RATIO_16_9)
+             {
+                 g_window_width = 854;
+                 g_window_height = 480;
+diff --git a/src/pc/ultra_reimplementation.c b/src/pc/ultra_reimplementation.c
+index f11d9ff..7748438 100644
+--- a/src/pc/ultra_reimplementation.c
++++ b/src/pc/ultra_reimplementation.c
+@@ -77,7 +77,7 @@ void osViSetSpecialFeatures(UNUSED u32 func) {
+ void osViSwapBuffer(UNUSED void *vaddr) {
+ }
+ 
+-OSTime osGetTime(void) {
++OSTime64 osGetTime(void) {
+     struct timeval tv;
+     gettimeofday(&tv, NULL);
+     return (unsigned long)tv.tv_sec * 1000000 + tv.tv_usec;
