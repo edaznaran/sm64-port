@@ -79,5 +79,6 @@ $(foreach p,$(BUILD_PROGRAMS),$(eval $(call COMPILE,$(p))))
 
 $(LIBAUDIOFILE):
 	@$(MAKE) -C audiofile
+	@ranlib $(LIBAUDIOFILE)
 
 .PHONY: all all-except-recomp clean default ido5.3_recomp
